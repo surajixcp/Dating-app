@@ -5,12 +5,14 @@ export const COLORS = {
   primaryGradientStart: '#E94057',
   primaryGradientEnd: '#F27121',
   background: '#FFFFFF',
-  backgroundOff: '#F3F3F3',
-  textDark: '#1F1F1F',
-  textLight: '#8E8E93',
+  backgroundOff: '#FAFAFA',
+  textDark: '#212121',
+  textLight: '#757575',
   border: '#E8E6EA',
   white: '#FFFFFF',
   black: '#000000',
+  success: '#4CAF50',
+  error: '#F44336'
 };
 
 export const SIZES = {
@@ -21,3 +23,21 @@ export const SIZES = {
   paddingMedium: 24,
   paddingSmall: 16,
 };
+
+export const SHADOWS = {
+  light: {
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.05,
+    shadowRadius: 10,
+    elevation: 3,
+  },
+  medium: {
+    shadowColor: '#E94057',
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.15,
+    shadowRadius: 15,
+    elevation: 6,
+  }
+};
+
