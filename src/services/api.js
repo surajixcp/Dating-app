@@ -3,7 +3,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Platform } from 'react-native';
 
 // Dynamically route localhost based on platform simulator or physical device
-export const BASE_URL = Platform.OS === 'android' ? 'http://10.0.2.2:8080' : 'http://192.168.1.20:8080';
+export const BASE_URL = Platform.OS === 'android' ? 'http://10.0.2.2:8080' : 'http://192.168.1.6:8080';
 export const API_URL = `${BASE_URL}/api`;
 
 const apiClient = axios.create({

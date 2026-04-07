@@ -1,5 +1,5 @@
-import React, { useState } from 'react';
-import { View, Text, StyleSheet, SafeAreaView, TouchableOpacity, ScrollView, Image, Switch, Dimensions, Alert, Modal, ImageBackground, TextInput, Platform } from 'react-native';
+import React, { useState, useEffect } from 'react';
+import { View, Text, StyleSheet, SafeAreaView, TouchableOpacity, ScrollView, Image, Switch, Dimensions, Alert, Modal, ImageBackground, TextInput, Platform, ActivityIndicator } from 'react-native';
 import * as ImagePicker from 'expo-image-picker';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -14,14 +14,53 @@ export default function EditProfileScreen({ navigation }) {
   
   const [activeGridIndex, setActiveGridIndex] = useState(null);
 
+  const [userId, setUserId] = useState(null);
   const [profileImage, setProfileImage] = useState('https://images.unsplash.com/photo-1517841905240-472988babdf9?w=400&q=80');
-  const [gridImages, setGridImages] = useState([
-    'https://images.unsplash.com/photo-1524504388940-b1c1722653e1?w=400&q=80',
-    'https://images.unsplash.com/photo-1539571696357-5a69c17a67c6?w=400&q=80',
-    'https://images.unsplash.com/photo-1494790108377-be9c29b29330?w=400&q=80',
-    'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=400&q=80'
-  ]);
+  const [gridImages, setGridImages] = useState([null, null, null, null]);
   const [bioText, setBioText] = useState('');
+  const [isLoading, setIsLoading] = useState(true);
+
+  useEffect(() => {
+    const fetchProfile = async () => {
+      try {
+        const response = await apiClient.get('/profile/me');
+        if (response.data && response.data.success) {
+          const userData = response.data.data;
+          setUserId(userData._id);
+          
+          if (userData.profile_url_1) setProfileImage(userData.profile_url_1);
+          
+          setGridImages([
+            userData.profile_url_2 || null,
+            userData.profile_url_3 || null,
+            userData.profile_url_4 || null,
+            userData.profile_url_5 || null
+          ]);
+
+          const lifestyle = userData.lifestyle || {};
+          setBioText(lifestyle.selfDescription || userData.description || '');
+          
+          if (userData.preferences) {
+            try {
+              let parsedPrefs = userData.preferences;
+              if (typeof parsedPrefs === 'string') {
+                parsedPrefs = JSON.parse(parsedPrefs);
+              }
+              setSwitches(s => ({...s, ...parsedPrefs}));
+            } catch (e) {
+              console.error('Error parsing preferences', e);
+            }
+          }
+        }
+      } catch (error) {
+        console.error('Error fetching profile in EditProfile:', error);
+      } finally {
+        setIsLoading(false);
+      }
+    };
+
+    fetchProfile();
+  }, []);
 
   const toggle = (key) => setSwitches(s => ({ ...s, [key]: !s[key] }));
 
@@ -88,6 +127,14 @@ export default function EditProfileScreen({ navigation }) {
     </View>
   );
 
+  if (isLoading) {
+    return (
+      <View style={[styles.container, { justifyContent: 'center', alignItems: 'center' }]}>
+        <ActivityIndicator size="large" color="#E94057" />
+      </View>
+    );
+  }
+
   return (
     <View style={styles.container}>
       <ScrollView bounces={false} contentContainerStyle={{ paddingBottom: 60, flexGrow: 1 }} showsVerticalScrollIndicator={false}>
@@ -108,13 +155,43 @@ export default function EditProfileScreen({ navigation }) {
                 style={styles.saveBtn} 
                 onPress={async () => {
                   try {
-                      await apiClient.put('/user/updateById', { 
-                          description: bioText,
-                          preferences: JSON.stringify(switches)
+                      setIsLoading(true); // show loader during save
+                      
+                      const formData = new FormData();
+                      if (profileImage && !profileImage.startsWith('http')) {
+                        formData.append('profile_url_1', { uri: profileImage, name: `photo1_${Date.now()}.jpg`, type: 'image/jpeg' });
+                      } else {
+                        formData.append('profile_url_1', profileImage || '');
+                      }
+
+                      gridImages.forEach((img, i) => {
+                        const key = `profile_url_${i+2}`;
+                        if (img && !img.startsWith('http')) {
+                          formData.append(key, { uri: img, name: `photo${i+2}_${Date.now()}.jpg`, type: 'image/jpeg' });
+                        } else {
+                          formData.append(key, img || '');
+                        }
                       });
+
+                      // First, upload/sync images mapping to User model
+                      await apiClient.put('/profile/picture-upload', formData, {
+                        headers: { 'Content-Type': 'multipart/form-data' }
+                      });
+                      
+                      // Then, sync preferences and text mapping to LifeStyle model
+                      const payload = { 
+                          selfDescription: bioText,
+                          description: bioText, // sending both to ensure compatibility
+                          preferences: JSON.stringify(switches),
+                      };
+                      
+                      await apiClient.put(`/profile/updateById/${userId}`, payload);
+                      setIsLoading(false);
                       Alert.alert("Success", "Your profile has been synchronized successfully.");
                       navigation.goBack();
                   } catch (e) {
+                      setIsLoading(false);
+                      console.error("Save Error", e);
                       Alert.alert("Error", "Could not sync profile settings");
                   }
                 }}

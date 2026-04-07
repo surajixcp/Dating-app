@@ -13,7 +13,7 @@ export default function DiscoverScreen({ navigation }) {
       title: 'Free Tonight', 
       icon: 'moon', 
       color: '#8A2387', 
-      image: require('../../public/images/img_20.png') 
+      image: require('../../public/images/freetonight.png') 
     },
     { 
       id: '2', 

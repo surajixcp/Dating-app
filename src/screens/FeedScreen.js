@@ -33,7 +33,8 @@ export default function FeedScreen({ navigation }) {
           active: user.is_active || false,
           location: user.location || '',
           distance: 'Nearby',
-          bio: user.lookingFor || 'Enjoying life and looking for someone to share beautiful moments with.',
+          bio: user.lifestyle && user.lifestyle.length > 0 && user.lifestyle[0].selfDescription ? user.lifestyle[0].selfDescription : 'No description available for this user.',
+          lifestyle: user.lifestyle && user.lifestyle.length > 0 ? user.lifestyle[0] : {},
           is_verified: user.is_verified || false
         }));
         setMatches(backendMatches);
@@ -108,7 +109,7 @@ export default function FeedScreen({ navigation }) {
         key={match.id} 
         style={[styles.card, isExpanded && styles.cardExpanded]} 
         activeOpacity={0.9} 
-        onPress={() => navigation.navigate('UserProfile')}
+        onPress={() => navigation.navigate('UserProfile', { user: match })}
       >
         <ImageBackground source={match.image} style={styles.cardInfo} imageStyle={styles.cardImage}>
           

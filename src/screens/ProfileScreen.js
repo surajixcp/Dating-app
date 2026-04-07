@@ -1,5 +1,6 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { View, Text, StyleSheet, SafeAreaView, TouchableOpacity, ImageBackground, ScrollView, Dimensions, Platform, ActivityIndicator } from 'react-native';
+import { useFocusEffect } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { COLORS, SIZES, SHADOWS } from '../theme/theme';
@@ -12,22 +13,24 @@ export default function ProfileScreen({ navigation }) {
   const [isLoading, setIsLoading] = useState(true);
   const [activeIndex, setActiveIndex] = useState(0);
 
-  useEffect(() => {
-    const fetchProfile = async () => {
-      try {
-        const response = await apiClient.get('/profile/me');
-        if (response.data && response.data.success) {
-          setProfile(response.data.data);
+  useFocusEffect(
+    useCallback(() => {
+      const fetchProfile = async () => {
+        try {
+          const response = await apiClient.get('/profile/me');
+          if (response.data && response.data.success) {
+            setProfile(response.data.data);
+          }
+        } catch (error) {
+          console.error('Error fetching profile:', error);
+        } finally {
+          setIsLoading(false);
         }
-      } catch (error) {
-        console.error('Error fetching profile:', error);
-      } finally {
-        setIsLoading(false);
-      }
-    };
+      };
 
-    fetchProfile();
-  }, []);
+      fetchProfile();
+    }, [])
+  );
 
   if (isLoading) {
     return (

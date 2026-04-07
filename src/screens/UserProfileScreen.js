@@ -1,27 +1,124 @@
-import React, { useState } from 'react';
-import { View, Text, StyleSheet, SafeAreaView, TouchableOpacity, ImageBackground, ScrollView, Dimensions, Image } from 'react-native';
+import React, { useState, useEffect } from 'react';
+import { View, Text, StyleSheet, SafeAreaView, TouchableOpacity, ImageBackground, ScrollView, Dimensions, Image, Alert } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
+import { Audio } from 'expo-av';
 import { COLORS } from '../theme/theme';
+import apiClient from '../services/api';
+import Purchases from '../services/revenuecat';
 
 const { height, width } = Dimensions.get('window');
 const ICEBREAKERS = ["Hiii 👋🏼", "Join Me 😍", "What's up 😉"];
-const TAGS = {
-  Drink: [{ label: 'Nondrinker', active: true }, { label: 'Drink Socially', active: false }, { label: 'Others', active: false }],
-  Interests: [{ label: 'Travelling', active: true }, { label: 'Books', active: true }, { label: 'Music', active: false }, { label: 'Music', active: false }],
-  'Traveling Destination': [{ label: 'Non Smoker', active: true }, { label: 'Smoke Socially', active: true }, { label: 'Other', active: false }],
-  Smoke: [{ label: 'Beach', active: true }, { label: 'Mountain', active: true }, { label: 'Silent Places', active: false }]
-};
 
-export default function UserProfileScreen({ navigation }) {
+export default function UserProfileScreen({ navigation, route }) {
   const [expanded, setExpanded] = useState(true);
+  const [isLiked, setIsLiked] = useState(false);
+  const [sound, setSound] = useState(null);
+
+  useEffect(() => {
+    return sound ? () => { sound.unloadAsync(); } : undefined;
+  }, [sound]);
+
+  const { user } = route.params || {};
+  const activeImage = user?.image || require('../../public/images/img_13.png');
+
+  // Dynamically map lifestyle elements into active Tag lists
+  const TAGS = {};
+  if (user?.lifestyle?.drinking) {
+    TAGS["Drink"] = [{ label: user.lifestyle.drinking, active: true }];
+  }
+  if (user?.lifestyle?.smoking) {
+    TAGS["Smoke"] = [{ label: user.lifestyle.smoking, active: true }];
+  }
+  if (user?.lifestyle?.exercise) {
+    TAGS["Exercise"] = [{ label: user.lifestyle.exercise, active: true }];
+  }
+  if (user?.lifestyle?.interests?.length > 0) {
+    TAGS["Interests"] = user.lifestyle.interests.map(i => ({ label: i, active: true }));
+  }
+  // Add fallback if empty
+  if (Object.keys(TAGS).length === 0) {
+    TAGS["General"] = [{ label: "N/A", active: false }];
+  }
+
+  const playLikeSound = async () => {
+    try {
+      const { sound: newSound } = await Audio.Sound.createAsync(
+         require('../../public/sounds/like.wav')
+      );
+      setSound(newSound);
+      await newSound.playAsync();
+    } catch(err) {
+      console.log('Error playing sound', err);
+    }
+  };
+
+  const handleLike = async () => {
+    if (!isLiked) {
+       setIsLiked(true);
+       await playLikeSound();
+       try {
+         const customerInfo = await Purchases.getCustomerInfo();
+         const isPremium = typeof customerInfo.entitlements.active['pro'] !== "undefined";
+         const response = await apiClient.post('/like/profile-like', { profile_id: user?.id, isPremium });
+         if (response.data && response.data.isMatch) {
+           navigation.navigate('MatchOverlay', { userName: user?.name, userImage: activeImage }); 
+         } else {
+           // Subtle popup confirmation instead of full block alert if they want a fluid experience
+           Alert.alert("Liked ❤️", `You liked ${user?.name || 'this user'}!`);
+         }
+       } catch (error) {
+         if (error.response && error.response.status === 402) {
+            setIsLiked(false); // revert locally
+            Alert.alert("Out of Swipes! 🛑", "You've hit your daily limit of likes. Upgrade to Viraag Premium to keep swiping!", [
+              { text: "No Thanks", style: "cancel" },
+              { text: "Upgrade", onPress: () => navigation.navigate('Premium') }
+            ]);
+         }
+       }
+    } else {
+       // user actively clicked to UNLIKE
+       setIsLiked(false);
+       try {
+         await apiClient.post(`/like/profile-dislike/${user?.id}`);
+       } catch (error) {
+         // Silently revert if api disconnects
+         console.log("Unlike failed", error);
+         setIsLiked(true);
+       }
+    }
+  };
+
+  const handleSuperLike = async () => {
+    try {
+      const customerInfo = await Purchases.getCustomerInfo();
+      const isPremium = typeof customerInfo.entitlements.active['pro'] !== "undefined";
+      const response = await apiClient.post('/like/profile-like', { profile_id: user?.id, isPremium, is_super_like: true });
+      if (response.data && response.data.isMatch) {
+        navigation.navigate('MatchOverlay', { userName: user?.name, userImage: activeImage }); 
+      } else {
+        Alert.alert("Super Liked ⭐", `You super liked ${user?.name || 'this user'}`);
+      }
+    } catch (error) {
+      if (error.response && error.response.status === 402) {
+         Alert.alert("Out of Super Likes! ⭐", "You've used your daily Super Like! Upgrade to Viraag Premium to send unlimited priority matching Super Likes!", [
+           { text: "No Thanks", style: "cancel" },
+           { text: "Upgrade", onPress: () => navigation.navigate('Premium') }
+         ]);
+      }
+    }
+  };
+
+  const navigateToChat = () => {
+     navigation.navigate('Chat', { recipientId: user?.id, recipientName: user?.name, recipientAvatar: activeImage });
+  };
 
   return (
     <View style={styles.container}>
       <ScrollView showsVerticalScrollIndicator={false} bounces={false} style={{ flex: 1 }}>
         {/* 50% Top Hero Map */}
       <ImageBackground 
-        source={require('../../public/images/img_13.png')} 
+        source={activeImage} 
         style={styles.heroImage}
       >
         <LinearGradient colors={['rgba(0,0,0,0.3)', 'transparent']} style={styles.topGradient}>
@@ -46,10 +143,12 @@ export default function UserProfileScreen({ navigation }) {
       {/* Floating Action Bar positioned on top of the seam */}
       <View style={styles.floatingActionWrapper}>
         <LinearGradient colors={['#960D1E', '#C61A28']} style={styles.actionBarGradient} start={{x:0, y:0}} end={{x:1, y:0}}>
-          <TouchableOpacity style={styles.actionIconCell}><Ionicons name="heart-outline" size={26} color="white" /></TouchableOpacity>
-          <TouchableOpacity style={styles.actionIconCell}><Ionicons name="chatbubble-ellipses-outline" size={26} color="white" /></TouchableOpacity>
-          <TouchableOpacity style={styles.actionIconCell}><Ionicons name="sparkles-outline" size={26} color="white" /></TouchableOpacity>
-          <TouchableOpacity style={styles.actionIconCell}><Ionicons name="person-add-outline" size={26} color="white" /></TouchableOpacity>
+          <TouchableOpacity style={styles.actionIconCell} onPress={handleLike}>
+             <Ionicons name={isLiked ? "heart" : "heart-outline"} size={isLiked ? 28 : 26} color={isLiked ? "#FF3B30" : "white"} />
+          </TouchableOpacity>
+          <TouchableOpacity style={styles.actionIconCell} onPress={navigateToChat}><Ionicons name="chatbubble-ellipses-outline" size={26} color="white" /></TouchableOpacity>
+          <TouchableOpacity style={styles.actionIconCell} onPress={handleSuperLike}><Ionicons name="sparkles-outline" size={26} color="white" /></TouchableOpacity>
+          <TouchableOpacity style={styles.actionIconCell} onPress={handleLike}><Ionicons name="person-add-outline" size={26} color="white" /></TouchableOpacity>
         </LinearGradient>
       </View>
 
@@ -69,14 +168,16 @@ export default function UserProfileScreen({ navigation }) {
           {/* Name & Title */}
           <View style={styles.nameRow}>
             <View style={{ flexDirection: 'row', alignItems: 'center' }}>
-              <Text style={styles.nameText}>Jessica Parker, 23</Text>
-              <Image source={require('../../public/images/verified.png')} style={{ width: 20, height: 20, marginLeft: 6 }} resizeMode="contain" />
+              <Text style={styles.nameText}>{user?.name || "Unknown"}, {user?.age || "N/A"}</Text>
+              {user?.is_verified && (
+                <Image source={require('../../public/images/verified.png')} style={{ width: 20, height: 20, marginLeft: 6 }} resizeMode="contain" />
+              )}
             </View>
-            <TouchableOpacity style={styles.sendIconBtn} onPress={() => navigation.navigate('Chat')}>
+            <TouchableOpacity style={styles.sendIconBtn} onPress={navigateToChat}>
               <Ionicons name="paper-plane-outline" size={20} color="#E94057" style={{ marginLeft: -2 }} />
             </TouchableOpacity>
           </View>
-          <Text style={styles.jobText}>Professional model</Text>
+          <Text style={styles.jobText}>Dating App Member</Text>
 
           {/* Location Block */}
           <View style={styles.sectionLarge}>
@@ -84,21 +185,23 @@ export default function UserProfileScreen({ navigation }) {
               <Text style={styles.sectionTitle}>Location</Text>
               <View style={styles.distanceBadgeRound}>
                 <Ionicons name="location-outline" size={12} color="#E94057" />
-                <Text style={styles.distanceText}>1 km</Text>
+                <Text style={styles.distanceText}>{user?.distance || "Nearby"}</Text>
               </View>
             </View>
-            <Text style={styles.sectionBody}>Chicago, IL United States</Text>
+            <Text style={styles.sectionBody}>{user?.location || "Not Specified"}</Text>
           </View>
 
           {/* About Block */}
           <View style={styles.sectionLarge}>
             <Text style={styles.sectionTitle}>About</Text>
             <Text style={styles.sectionBody}>
-              My name is Jessica Parker and I enjoy meeting new people and finding ways to help them have an uplifting experience. I enjoy reading..
+              {user?.bio || "No description provided yet."}
             </Text>
-            <TouchableOpacity>
-              <Text style={styles.readMoreText}>Read more</Text>
-            </TouchableOpacity>
+            {user?.bio && user.bio.length > 100 && (
+              <TouchableOpacity>
+                <Text style={styles.readMoreText}>Read more</Text>
+              </TouchableOpacity>
+            )}
           </View>
 
           {/* Expandable Lifestyle segment */}
