@@ -2,8 +2,8 @@ import axios from 'axios';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Platform } from 'react-native';
 
-// Dynamically route localhost based on platform simulator or physical device
-export const BASE_URL = Platform.OS === 'android' ? 'http://10.0.2.2:8080' : 'http://192.168.1.6:8080';
+// Connection to live Render deployment
+export const BASE_URL = 'https://virag-ehrp.onrender.com';
 export const API_URL = `${BASE_URL}/api`;
 
 const apiClient = axios.create({

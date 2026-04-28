@@ -1,5 +1,5 @@
-import React, { useState, useEffect, useCallback } from 'react';
-import { View, Text, StyleSheet, SafeAreaView, TouchableOpacity, ImageBackground, ScrollView, Dimensions, Platform, ActivityIndicator } from 'react-native';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
+import { View, Text, StyleSheet, SafeAreaView, TouchableOpacity, ImageBackground, ScrollView, Dimensions, Platform, ActivityIndicator, Animated, PanResponder, Easing } from 'react-native';
 import { useFocusEffect } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -12,6 +12,63 @@ export default function ProfileScreen({ navigation }) {
   const [profile, setProfile] = useState(null);
   const [isLoading, setIsLoading] = useState(true);
   const [activeIndex, setActiveIndex] = useState(0);
+
+  const panAnim = useRef(new Animated.Value(0)).current;
+  const lastOffset = useRef(0);
+  // Guarantee at least 140px of the card is visible so the handle isn't hidden by the bottom UI
+  const MAX_DOWN = height - (height * 0.55 - 15) - 140; 
+  // Allow pulling the card up to cover most of the screen
+  const MAX_UP = -(height * 0.40); 
+
+  const panResponder = useRef(
+    PanResponder.create({
+      onMoveShouldSetPanResponder: (_, gestureState) => {
+        return Math.abs(gestureState.dy) > 10 && Math.abs(gestureState.vy) > Math.abs(gestureState.vx);
+      },
+      onPanResponderGrant: () => {
+        panAnim.setOffset(lastOffset.current);
+        panAnim.setValue(0);
+      },
+      onPanResponderMove: (_, gestureState) => {
+        let newY = gestureState.dy;
+        if (lastOffset.current + newY < MAX_UP) newY = MAX_UP - lastOffset.current; 
+        if (lastOffset.current + newY > MAX_DOWN) newY = MAX_DOWN - lastOffset.current; 
+        panAnim.setValue(newY);
+      },
+      onPanResponderRelease: (_, gestureState) => {
+        panAnim.flattenOffset();
+        let currentY = lastOffset.current + gestureState.dy;
+        if (currentY < MAX_UP) currentY = MAX_UP;
+        if (currentY > MAX_DOWN) currentY = MAX_DOWN;
+
+        let toValue = 0; // Default is mid (0)
+        
+        const distUp = Math.abs(currentY - MAX_UP);
+        const distMid = Math.abs(currentY - 0);
+        const distDown = Math.abs(currentY - MAX_DOWN);
+
+        if (gestureState.vy < -0.5) {
+          toValue = currentY > 0 ? 0 : MAX_UP;
+        } else if (gestureState.vy > 0.5) {
+          toValue = currentY < 0 ? 0 : MAX_DOWN;
+        } else {
+          const min = Math.min(distUp, distMid, distDown);
+          if (min === distUp) toValue = MAX_UP;
+          else if (min === distDown) toValue = MAX_DOWN;
+          else toValue = 0;
+        }
+
+        Animated.timing(panAnim, {
+          toValue,
+          duration: 350,
+          easing: Easing.out(Easing.exp),
+          useNativeDriver: true
+        }).start(() => {
+          lastOffset.current = toValue;
+        });
+      }
+    })
+  ).current;
 
   useFocusEffect(
     useCallback(() => {
@@ -63,9 +120,7 @@ export default function ProfileScreen({ navigation }) {
 
   return (
     <View style={styles.container}>
-      <ScrollView showsVerticalScrollIndicator={false} bounces={false} style={{ flex: 1 }}>
-      
-      <View style={{ height: height * 0.55 }}>
+      <View style={StyleSheet.absoluteFill}>
         <ScrollView
           horizontal
           pagingEnabled
@@ -101,83 +156,112 @@ export default function ProfileScreen({ navigation }) {
             </ImageBackground>
           ))}
         </ScrollView>
-
-        <View style={styles.dotContainerOverlay}>
-          {images.map((_, i) => (
-            <View key={i} style={[styles.dot, activeIndex === i ? styles.dotActive : null]} />
-          ))}
-        </View>
       </View>
 
-      <View style={styles.bottomCard}>
-        <View style={styles.nameContainer}>
-          <View style={styles.nameLeft}>
-            <Text style={styles.nameText}>{userData.name || 'User'}, {userData.age || 'N/A'}</Text>
-            <Text style={styles.jobText}>{userData.lookingFor || 'Dating App Member'}</Text>
-          </View>
-          <TouchableOpacity style={styles.sendIconBtn} onPress={() => navigation.navigate('Premium')}>
-            <Ionicons name="star" size={24} color="#FFF" />
-          </TouchableOpacity>
-        </View>
+      <Animated.View style={[styles.dotContainerOverlay, { transform: [{ translateY: panAnim }] }]}>
+        {images.map((_, i) => (
+          <View key={i} style={[styles.dot, activeIndex === i ? styles.dotActive : null]} />
+        ))}
+      </Animated.View>
 
-        {/* Stats Row */}
-        <View style={styles.statsRow}>
-          <View style={styles.statBox}>
-            <Text style={styles.statValue}>{userData.is_verified ? '100%' : '80%'}</Text>
-            <Text style={styles.statLabel}>Completion</Text>
-          </View>
-          <View style={styles.statBox}>
-            <Text style={styles.statValue}>{userData.likeCount || 0}</Text>
-            <Text style={styles.statLabel}>Likes</Text>
-          </View>
-          <View style={styles.statBox}>
-            <Text style={styles.statValue}>0</Text>
-            <Text style={styles.statLabel}>Matches</Text>
-          </View>
-        </View>
-
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Location</Text>
-          <View style={styles.rowCentered}>
-             <Ionicons name="location-outline" size={20} color={COLORS.primary} />
-             <Text style={styles.sectionBody}>{userData.location || 'Not Specified'}</Text>
-          </View>
-        </View>
-
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>About</Text>
-          <Text style={styles.sectionBodyText}>
-            {lifestyle.selfDescription || 'No description provided yet.'}
-          </Text>
-          {lifestyle.selfDescription && lifestyle.selfDescription.length > 100 && (
-            <TouchableOpacity>
-              <Text style={styles.readMore}>Read more</Text>
-            </TouchableOpacity>
-          )}
+      <Animated.View style={[styles.bottomCardWrapper, { transform: [{ translateY: panAnim }] }]}>
+        <View {...panResponder.panHandlers} style={styles.dragHandleContainer}>
+          <View style={styles.dragHandle} />
         </View>
         
-        {/* Extra spacing for Bottom Tab Bar overlap safety */}
-        <View style={{ height: 120 }} />
-      </View>
-      </ScrollView>
+        <ScrollView showsVerticalScrollIndicator={false} bounces={false} style={{ flex: 1 }} contentContainerStyle={styles.bottomCardContent}>
+          <View style={styles.nameContainer}>
+            <View style={styles.nameLeft}>
+              <Text style={styles.nameText}>{userData.name || 'User'}, {userData.age || 'N/A'}</Text>
+              <Text style={styles.jobText}>{userData.lookingFor || 'Dating App Member'}</Text>
+            </View>
+            <TouchableOpacity style={styles.sendIconBtn} onPress={() => navigation.navigate('Premium')}>
+              <Ionicons name="star" size={24} color="#FFF" />
+            </TouchableOpacity>
+          </View>
+
+          <View style={styles.statsRow}>
+            <View style={styles.statBox}>
+              <Text style={styles.statValue}>{userData.is_verified ? '100%' : '80%'}</Text>
+              <Text style={styles.statLabel}>Completion</Text>
+            </View>
+            <View style={styles.statBox}>
+              <Text style={styles.statValue}>{userData.likeCount || 0}</Text>
+              <Text style={styles.statLabel}>Likes</Text>
+            </View>
+            <View style={styles.statBox}>
+              <Text style={styles.statValue}>0</Text>
+              <Text style={styles.statLabel}>Matches</Text>
+            </View>
+          </View>
+
+          <View style={styles.section}>
+            <Text style={styles.sectionTitle}>Location</Text>
+            <View style={styles.rowCentered}>
+               <Ionicons name="location-outline" size={20} color={COLORS.primary} />
+               <Text style={styles.sectionBody}>{userData.location || 'Not Specified'}</Text>
+            </View>
+          </View>
+
+          <View style={styles.section}>
+            <Text style={styles.sectionTitle}>About</Text>
+            <Text style={styles.sectionBodyText}>
+              {lifestyle.selfDescription || 'No description provided yet.'}
+            </Text>
+            {lifestyle.selfDescription && lifestyle.selfDescription.length > 100 && (
+              <TouchableOpacity>
+                <Text style={styles.readMore}>Read more</Text>
+              </TouchableOpacity>
+            )}
+          </View>
+          
+        </ScrollView>
+      </Animated.View>
     </View>
   );
 }
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: COLORS.white },
-  heroImage: { height: height * 0.55, justifyContent: 'space-between' },
+  heroImage: { height: height, justifyContent: 'flex-start' },
   topGradient: { height: 140 },
   header: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingHorizontal: 20, paddingTop: 10 },
   headerTitle: { fontSize: 20, fontWeight: '800', color: COLORS.textDark, fontFamily: Platform.OS === 'ios' ? 'Georgia' : 'serif' }, 
   headerRightGroup: { flexDirection: 'row', gap: 10 },
   iconBtn: { width: 44, height: 44, borderRadius: 22, backgroundColor: 'rgba(255,255,255,0.6)', alignItems: 'center', justifyContent: 'center' },
   
-  dotContainerOverlay: { position: 'absolute', bottom: 40, left: 0, right: 0, flexDirection: 'row', justifyContent: 'center', alignItems: 'center', gap: 8 },
+  dotContainerOverlay: { position: 'absolute', top: height * 0.55 - 40, left: 0, right: 0, flexDirection: 'row', justifyContent: 'center', alignItems: 'center', gap: 8 },
   dot: { width: 8, height: 8, borderRadius: 4, backgroundColor: 'rgba(255,255,255,0.5)' },
   dotActive: { backgroundColor: COLORS.white, width: 24, height: 8, borderRadius: 4 },
 
-  bottomCard: { backgroundColor: COLORS.white, marginTop: -24, borderTopLeftRadius: 30, borderTopRightRadius: 30, paddingHorizontal: 24, paddingTop: 32 },
+  bottomCardWrapper: {
+    position: 'absolute',
+    top: height * 0.55 - 15,
+    left: 0,
+    right: 0,
+    height: height + 100, // Taller to ensure it reaches the bottom when dragged up completely
+    backgroundColor: COLORS.white,
+    borderTopLeftRadius: 30,
+    borderTopRightRadius: 30,
+    ...SHADOWS.medium
+  },
+  dragHandleContainer: {
+    width: '100%',
+    alignItems: 'center',
+    paddingTop: 15,
+    paddingBottom: 25,
+    backgroundColor: 'transparent'
+  },
+  dragHandle: {
+    width: 50,
+    height: 6,
+    borderRadius: 3,
+    backgroundColor: '#A0A0A0',
+  },
+  bottomCardContent: {
+    paddingHorizontal: 24,
+    paddingBottom: 120,
+  },
   
   nameContainer: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 24 },
   nameLeft: { flex: 1 },
@@ -198,4 +282,3 @@ const styles = StyleSheet.create({
   sectionBodyText: { fontSize: 16, color: COLORS.textLight, lineHeight: 26 },
   readMore: { fontSize: 15, fontWeight: '700', color: COLORS.primary, marginTop: 8 }
 });
-
